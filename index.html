@@ -161,42 +161,29 @@ function fmt(n){
 }
 
 async function fetchYahoo(ticker){
-  const res = await fetch(`${WORKER_URL}/?ticker=${ticker}`);
+  const res = await fetch(WORKER_URL+'/?ticker='+ticker);
   const d = await res.json();
   const qs = d.quoteSummary.result[0];
   const price = qs.price;
   const sd = qs.summaryDetail;
-  const ks = qs.defaultKeyStatistics;
   return {
     name: price.longName||price.shortName||ticker,
     symbol: ticker.toUpperCase(),
     price: price.regularMarketPrice.raw,
     prevClose: price.regularMarketPreviousClose.raw,
     change: ((price.regularMarketPrice.raw - price.regularMarketPreviousClose.raw)/price.regularMarketPreviousClose.raw*100).toFixed(2),
-    marketCap: price.marketCap?.raw,
-    pe: sd.trailingPE?.raw,
-    forwardPe: sd.forwardPE?.raw,
-    low52: sd.fiftyTwoWeekLow?.raw,
-    high52: sd.fiftyTwoWeekHigh?.raw,
-    dividendYield: sd.dividendYield?.raw,
-    beta: sd.beta?.raw,
+    marketCap: price.marketCap&&price.marketCap.raw,
+    pe: sd.trailingPE&&sd.trailingPE.raw,
+    forwardPe: sd.forwardPE&&sd.forwardPE.raw,
+    low52: sd.fiftyTwoWeekLow&&sd.fiftyTwoWeekLow.raw,
+    high52: sd.fiftyTwoWeekHigh&&sd.fiftyTwoWeekHigh.raw,
+    dividendYield: sd.dividendYield&&sd.dividendYield.raw,
+    beta: sd.beta&&sd.beta.raw,
   };
 }
 
 async function askClaude(data){
-  const prompt = `당신은 주식 분석 전문가입니다. 아래 데이터를 바탕으로 초보 한국 투자자를 위한 분석을 작성하세요.
-
-종목: ${data.name} (${data.symbol})
-현재가: $${data.price}
-등락률: ${data.change}%
-시가총액: ${fmt(data.marketCap)}
-P/E: ${data.pe?.toFixed(1)||'N/A'} (Forward P/E: ${data.forwardPe?.toFixed(1)||'N/A'})
-52주 범위: $${data.low52?.toFixed(2)||'?'} ~ $${data.high52?.toFixed(2)||'?'}
-배당수익률: ${data.dividendYield?(data.dividendYield*100).toFixed(2)+'%':'없음'}
-베타: ${data.beta?.toFixed(2)||'N/A'}
-
-다음 JSON 형식으로만 응답하세요 (마크다운 없이):
-{"score":75,"scoreDesc":"점수 이유 한줄","strength":"투자포인트1\n투자포인트2\n투자포인트3","risk":"리스크1\n리스크2","summary":"30자 이내 한줄 요약"}`;
+  const prompt = '당신은 주식 분석 전문가입니다. 아래 데이터를 바탕으로 초보 한국 투자자를 위한 분석을 작성하세요.\n\n종목: '+data.name+' ('+data.symbol+')\n현재가: $'+data.price+'\n등락률: '+data.change+'%\n시가총액: '+fmt(data.marketCap)+'\nP/E: '+(data.pe?data.pe.toFixed(1):'N/A')+' (Forward P/E: '+(data.forwardPe?data.forwardPe.toFixed(1):'N/A')+')\n52주 범위: $'+(data.low52?data.low52.toFixed(2):'?')+' ~ $'+(data.high52?data.high52.toFixed(2):'?')+'\n배당수익률: '+(data.dividendYield?(data.dividendYield*100).toFixed(2)+'%':'없음')+'\n베타: '+(data.beta?data.beta.toFixed(2):'N/A')+'\n\n다음 JSON 형식으로만 응답하세요 (마크다운 없이):\n{"score":75,"scoreDesc":"점수 이유 한줄","strength":"투자포인트1\\n투자포인트2\\n투자포인트3","risk":"리스크1\\n리스크2","summary":"30자 이내 한줄 요약"}';
 
   const res = await fetch(CLAUDE_API, {
     method:'POST',
@@ -236,12 +223,12 @@ async function startAnalysis(){
     chEl.textContent=(chVal>=0?'▲ +':'▼ ')+data.change+'%';
     chEl.className='change '+(chVal>=0?'up':'dn');
     document.getElementById('rMcap').textContent=fmt(data.marketCap);
-    document.getElementById('rPe').textContent=data.pe?.toFixed(1)||'N/A';
+    document.getElementById('rPe').textContent=data.pe?data.pe.toFixed(1):'N/A';
     document.getElementById('rPeSub').textContent=data.forwardPe?'Forward: '+data.forwardPe.toFixed(1):'';
     document.getElementById('r52').textContent=data.low52&&data.high52?'$'+data.low52.toFixed(0)+'~$'+data.high52.toFixed(0):'N/A';
     document.getElementById('rDiv').textContent=data.dividendYield?(data.dividendYield*100).toFixed(2)+'%':'없음';
     const beta=data.beta;
-    document.getElementById('rBeta').textContent=beta?.toFixed(2)||'N/A';
+    document.getElementById('rBeta').textContent=beta?beta.toFixed(2):'N/A';
     document.getElementById('rBetaSub').textContent=beta?(beta>1.5?'고변동성':beta<0.8?'저변동성':'시장 유사'):'';
     const score=ai.score||50;
     const sEl=document.getElementById('scoreNum');
