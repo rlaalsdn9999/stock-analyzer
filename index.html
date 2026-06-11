@@ -91,7 +91,7 @@ h1 span{color:#4a9eff;font-weight:600}
 
   <div class="status" id="status">
     <div class="spinner"></div>
-    <div id="statusText">데이터 수집 중...</div>
+    <div id="statusText">분석 중...</div>
   </div>
 
   <div class="error" id="errorBox"></div>
@@ -117,7 +117,7 @@ h1 span{color:#4a9eff;font-weight:600}
     </div>
     <div class="grid-3">
       <div class="card"><div class="card-label">시가총액</div><div class="card-val" id="rMcap">—</div></div>
-      <div class="card"><div class="card-label">P/E 비율</div><div class="card-val" id="rPe">—</div><div class="card-sub" id="rPeSub"></div></div>
+      <div class="card"><div class="card-label">P/E 비율</div><div class="card-val" id="rPe">—</div></div>
       <div class="card"><div class="card-label">52주 범위</div><div class="card-val" id="r52">—</div></div>
     </div>
     <div class="grid">
@@ -147,7 +147,6 @@ h1 span{color:#4a9eff;font-weight:600}
 
 <script>
 const WORKER_URL = 'https://spayahoo-proxy.rlaalsdn0691.workers.dev';
-const CLAUDE_API = 'https://api.anthropic.com/v1/messages';
 
 function setTicker(t){ document.getElementById('tickerInput').value=t; }
 document.getElementById('tickerInput').addEventListener('keydown',e=>{ if(e.key==='Enter') startAnalysis(); });
@@ -158,45 +157,6 @@ function fmt(n){
   if(n>=1e9) return '$'+(n/1e9).toFixed(1)+'B';
   if(n>=1e6) return '$'+(n/1e6).toFixed(1)+'M';
   return '$'+n.toFixed(2);
-}
-
-async function fetchYahoo(ticker){
-  const res = await fetch(WORKER_URL+'/?ticker='+ticker);
-  const d = await res.json();
-  const qs = d.quoteSummary.result[0];
-  const price = qs.price;
-  const sd = qs.summaryDetail;
-  return {
-    name: price.longName||price.shortName||ticker,
-    symbol: ticker.toUpperCase(),
-    price: price.regularMarketPrice.raw,
-    prevClose: price.regularMarketPreviousClose.raw,
-    change: ((price.regularMarketPrice.raw - price.regularMarketPreviousClose.raw)/price.regularMarketPreviousClose.raw*100).toFixed(2),
-    marketCap: price.marketCap&&price.marketCap.raw,
-    pe: sd.trailingPE&&sd.trailingPE.raw,
-    forwardPe: sd.forwardPE&&sd.forwardPE.raw,
-    low52: sd.fiftyTwoWeekLow&&sd.fiftyTwoWeekLow.raw,
-    high52: sd.fiftyTwoWeekHigh&&sd.fiftyTwoWeekHigh.raw,
-    dividendYield: sd.dividendYield&&sd.dividendYield.raw,
-    beta: sd.beta&&sd.beta.raw,
-  };
-}
-
-async function askClaude(data){
-  const prompt = '당신은 주식 분석 전문가입니다. 아래 데이터를 바탕으로 초보 한국 투자자를 위한 분석을 작성하세요.\n\n종목: '+data.name+' ('+data.symbol+')\n현재가: $'+data.price+'\n등락률: '+data.change+'%\n시가총액: '+fmt(data.marketCap)+'\nP/E: '+(data.pe?data.pe.toFixed(1):'N/A')+' (Forward P/E: '+(data.forwardPe?data.forwardPe.toFixed(1):'N/A')+')\n52주 범위: $'+(data.low52?data.low52.toFixed(2):'?')+' ~ $'+(data.high52?data.high52.toFixed(2):'?')+'\n배당수익률: '+(data.dividendYield?(data.dividendYield*100).toFixed(2)+'%':'없음')+'\n베타: '+(data.beta?data.beta.toFixed(2):'N/A')+'\n\n다음 JSON 형식으로만 응답하세요 (마크다운 없이):\n{"score":75,"scoreDesc":"점수 이유 한줄","strength":"투자포인트1\\n투자포인트2\\n투자포인트3","risk":"리스크1\\n리스크2","summary":"30자 이내 한줄 요약"}';
-
-  const res = await fetch(CLAUDE_API, {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({
-      model:'claude-sonnet-4-20250514',
-      max_tokens:1000,
-      messages:[{role:'user',content:prompt}]
-    })
-  });
-  const d = await res.json();
-  const raw = d.content[0].text.replace(/```json|```/g,'').trim();
-  return JSON.parse(raw);
 }
 
 async function startAnalysis(){
@@ -210,26 +170,32 @@ async function startAnalysis(){
   status.style.display='block';
   result.style.display='none';
   errorBox.style.display='none';
+  document.getElementById('statusText').textContent='데이터 수집 및 AI 분석 중...';
+
   try{
-    document.getElementById('statusText').textContent='Yahoo Finance 데이터 수집 중...';
-    const data = await fetchYahoo(ticker);
-    document.getElementById('statusText').textContent='AI 분석 생성 중...';
-    const ai = await askClaude(data);
-    document.getElementById('rName').textContent=data.name;
-    document.getElementById('rSym').textContent=data.symbol;
-    document.getElementById('rPrice').textContent='$'+data.price.toFixed(2);
+    const res = await fetch(WORKER_URL+'/?ticker='+ticker);
+    const d = await res.json();
+
+    if(d.error){ throw new Error(d.error); }
+
+    const s = d.stock;
+    const ai = d.ai;
+
+    document.getElementById('rName').textContent=s.name;
+    document.getElementById('rSym').textContent=s.symbol;
+    document.getElementById('rPrice').textContent='$'+Number(s.price).toFixed(2);
     const chEl=document.getElementById('rChange');
-    const chVal=parseFloat(data.change);
-    chEl.textContent=(chVal>=0?'▲ +':'▼ ')+data.change+'%';
+    const chVal=parseFloat(s.change);
+    chEl.textContent=(chVal>=0?'▲ +':'▼ ')+chVal.toFixed(2)+'%';
     chEl.className='change '+(chVal>=0?'up':'dn');
-    document.getElementById('rMcap').textContent=fmt(data.marketCap);
-    document.getElementById('rPe').textContent=data.pe?data.pe.toFixed(1):'N/A';
-    document.getElementById('rPeSub').textContent=data.forwardPe?'Forward: '+data.forwardPe.toFixed(1):'';
-    document.getElementById('r52').textContent=data.low52&&data.high52?'$'+data.low52.toFixed(0)+'~$'+data.high52.toFixed(0):'N/A';
-    document.getElementById('rDiv').textContent=data.dividendYield?(data.dividendYield*100).toFixed(2)+'%':'없음';
-    const beta=data.beta;
-    document.getElementById('rBeta').textContent=beta?beta.toFixed(2):'N/A';
+    document.getElementById('rMcap').textContent=fmt(s.marketCap);
+    document.getElementById('rPe').textContent=s.pe?Number(s.pe).toFixed(1):'N/A';
+    document.getElementById('r52').textContent=s.low52&&s.high52?'$'+Number(s.low52).toFixed(0)+'~$'+Number(s.high52).toFixed(0):'N/A';
+    document.getElementById('rDiv').textContent=s.dividendYield?Number(s.dividendYield).toFixed(2)+'%':'없음';
+    const beta=s.beta;
+    document.getElementById('rBeta').textContent=beta?Number(beta).toFixed(2):'N/A';
     document.getElementById('rBetaSub').textContent=beta?(beta>1.5?'고변동성':beta<0.8?'저변동성':'시장 유사'):'';
+
     const score=ai.score||50;
     const sEl=document.getElementById('scoreNum');
     const bEl=document.getElementById('scoreBar');
@@ -241,6 +207,7 @@ async function startAnalysis(){
     document.getElementById('aiStrength').textContent=ai.strength||'';
     document.getElementById('aiRisk').textContent=ai.risk||'';
     document.getElementById('aiSummary').textContent=ai.summary||'';
+
     status.style.display='none';
     result.style.display='block';
   }catch(e){
